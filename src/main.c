@@ -724,7 +724,7 @@ int main()
 {
 	printf("this is LoRa test!\n");
 	lgw_start();
-//	uint8_t buff[10] = {"nihao,lora"};
+
 	while(1)
 	{
 		lgw_receive();
@@ -742,11 +742,14 @@ int main()
 			 }
 			 printf("\n");
 		 }
-//		if(SX1276Tx1Data(&buff[0], 10)!=0)
+//		uint8_t buff[] = {"nihao,lora!"};
+//		if(SX1276Tx1Data(&buff[0], sizeof(buff))!=0)
 //		{
 //			MSG("INFO: TX1 SEND ERROR .........\n");
 //
 //		}
+//		sleep(1);
+//		SX1276RxStateEnter();
 	}
 
 	return 0;

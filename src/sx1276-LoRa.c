@@ -157,7 +157,7 @@ tLoRaSettings LoRaSettings =
                        5: 41.6 kHz, 6: 62.5 kHz, 7: 125 kHz, 8: 250 kHz, 9: 500 kHz, other: Reserved] */
     7,               /* 扩频因数 [6: 64, 7: 128, 8: 256, 9: 512, 10: 1024, 11: 2048, 12: 4096  chips] */
     1,                // ErrorCoding [1: 4/5, 2: 4/6, 3: 4/7, 4: 4/8]
-    true,             /* CRC 校验 [0: OFF, 1: ON] */
+	true,             /* CRC 校验 [0: OFF, 1: ON] */
     false,            // ImplicitHeaderOn [0: OFF, 1: ON] /* 包头模式 */
     0,                 // RxSingleOn [0: Continuous, 1 Single] /* 固定为设置0 */
     0,                // FreqHopOn [0: OFF, 1: ON]  /* 固定为设置0 */
@@ -217,24 +217,33 @@ void SX1276LoRaInit( void )
 
     SX1276LoRaSetRFFrequency( LoRaSettings.RFFrequency ); //472500000
 
-    SX1276LoRaSetSpreadingFactor( LoRaSettings.SpreadingFactor ); // SF6 only operates in implicit header mode.
-
+    /*REG_LR_MODEMCONFIG1 */
     SX1276LoRaSetErrorCoding( LoRaSettings.ErrorCoding );	 	/* code rate 编码率 */
-    SX1276LoRaSetPacketCrcOn( LoRaSettings.CrcOn );
     SX1276LoRaSetSignalBandwidth( LoRaSettings.SignalBw );
-
     SX1276LoRaSetImplicitHeaderOn( LoRaSettings.ImplicitHeaderOn );
+    /*REG_LR_MODEMCONFIG2 */
+    SX1276LoRaSetSpreadingFactor( LoRaSettings.SpreadingFactor ); // SF6 only operates in implicit header mode.
+    SX1276LoRaSetPacketCrcOn( LoRaSettings.CrcOn );
     SX1276LoRaSetSymbTimeout( 0x3FF );
-    SX1276LoRaSetPayloadLength( LoRaSettings.PayloadLength );
+    /*REG_LR_MODEMCONFIG3*/
     SX1276LoRaSetLowDatarateOptimize( false );
 
-//    SX1276Write( 0x1F, (uint8_t)(8 & 0xFF));
-    SX1276LoRaSetPreambleLength((uint8_t)8);
+    SX1276Write( 0x1F, (uint8_t)(8 & 0xFF));
 
-//    uint8_t data;
-//    SX1276Read(0x31,&data);
-//    SX1276Write( 0x31, (data & 0xF8)|0x03);
-//    SX1276Write( 0x37, 0x0A);
+    SX1276LoRaSetPreambleLength((uint16_t)8);
+
+    if(LoRaSettings.ImplicitHeaderOn)
+    {
+    	SX1276LoRaSetPayloadLength( LoRaSettings.PayloadLength );
+    }
+    /* BW != 9 */
+    SX1276Write(AM_SX1276_LORA_REG_TEST36, 0x03);
+
+    /* SF != 6  */
+    uint8_t data;
+    SX1276Read(0x31,&data);
+    SX1276Write( 0x31, (data & 0xF8)|0x03);
+    SX1276Write( 0x37, 0x0A);
 
 #if( ( MODULE_SX1276RF1IAS == 1 ) || ( MODULE_SX1276RF1KAS == 1 ) )
     if( LoRaSettings.RFFrequency > 860000000 )
@@ -792,17 +801,28 @@ void LoRaRxStateEnter (void)
 	uint8_t data;
 
 	SX1276Read(AM_SX1276_LORA_REG_INVERTIQ,&data);
+//	SX1276Write(AM_SX1276_LORA_REG_INVERTIQ,
+//			((data & AM_SX1276_LORA_RF_INVERTIQ_TX_MASK &
+//					AM_SX1276_LORA_RF_INVERTIQ_RX_MASK) |
+//					AM_SX1276_LORA_RF_INVERTIQ_RX_OFF |
+//					AM_SX1276_LORA_RF_INVERTIQ_TX_OFF));
+//	SX1276Write(AM_SX1276_LORA_REG_INVERTIQ2,AM_SX1276_LORA_RF_INVERTIQ2_OFF);
+    /*  iq_inverted  == 1*/
 	SX1276Write(AM_SX1276_LORA_REG_INVERTIQ,
 			((data & AM_SX1276_LORA_RF_INVERTIQ_TX_MASK &
 					AM_SX1276_LORA_RF_INVERTIQ_RX_MASK) |
-					AM_SX1276_LORA_RF_INVERTIQ_RX_OFF |
+					AM_SX1276_LORA_RF_INVERTIQ_RX_ON |
 					AM_SX1276_LORA_RF_INVERTIQ_TX_OFF));
-	SX1276Write(AM_SX1276_LORA_REG_INVERTIQ2,AM_SX1276_LORA_RF_INVERTIQ2_OFF);
-//
-//	SX1276Read(0x31,&data);
-//	SX1276Write(0x31,data & 0x7F);
-//	SX1276Write(0x30, 0x00);
-//	SX1276Write(0x2F, 0x40);
+	SX1276Write(AM_SX1276_LORA_REG_INVERTIQ2,AM_SX1276_LORA_RF_INVERTIQ2_ON);
+
+	/* BW < 9 */
+	SX1276Read(0x31,&data);
+	SX1276Write(0x31,data & 0x7F);
+	SX1276Write(0x30, 0x00);
+
+	/* BW == 7*/
+	SX1276Write(0x2F, 0x40);
+
 	SX1276LR->RegIrqFlagsMask = RFLR_IRQFLAGS_RXTIMEOUT |
                                     //RFLR_IRQFLAGS_RXDONE |    /*  只打开接收完成这个中断     */
                                     RFLR_IRQFLAGS_PAYLOADCRCERROR |
@@ -813,8 +833,8 @@ void LoRaRxStateEnter (void)
                                     RFLR_IRQFLAGS_CADDETECTED;
 	SX1276Write( REG_LR_IRQFLAGSMASK, SX1276LR->RegIrqFlagsMask ); /*  设置需要屏蔽的中断,被注释掉的中断是打开的        */
 
-//	SX1276Write(0x0F, 0);
-//	SX1276Write(0x0D, 0);
+	SX1276Write(0x0F, 0);
+	SX1276Write(0x0D, 0);
 
 	SX1276LR->RegHopPeriod = 255;
 	SX1276Write( REG_LR_HOPPERIOD, SX1276LR->RegHopPeriod );			//0x24
@@ -899,7 +919,7 @@ void LoRaRxDataRead (uint8_t *pbuf, uint8_t *size )
 ** output parameters:   无
 ** Returned value:      成功:0; 失败:其它
 *********************************************************************************************************/
-uint8_t LoRaTxData (uint8_t *pbuf, uint8_t size ,uint8_t *pcrcbuf ,uint8_t crcflag,int win)
+uint8_t LoRaTxData (uint8_t *pbuf, uint8_t size ,uint8_t *pcrcbuf ,uint8_t crcflag,int wd)
 {
      uint32_t i,j; 
 	
@@ -908,7 +928,7 @@ uint8_t LoRaTxData (uint8_t *pbuf, uint8_t size ,uint8_t *pcrcbuf ,uint8_t crcfl
     	 return 1;
 	 }		 
     SX1276LoRaSetOpMode( RFLR_OPMODE_STANDBY );
-    if(win == 1)
+    if(wd == 1)
     {
     	uint32_t Freq;
 //    	Freq = 500300000;
